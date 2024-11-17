@@ -29,10 +29,10 @@ class Line:
         self.x = self.y = self.z = 0.0
         self.X = self.Y = self.W = 0.0
         self.scale = 0.0
-
         self.spriteX = 0.0
         self.clip = 0.0
         self.sprite: pygame.Surface = None
+        self.hit = False  # Atributo que indica se o carro já causou uma colisão
 
     def project(self, camX: int, camY: int, camZ: int):
         self.scale = camD / (self.z - camZ)
@@ -49,10 +49,6 @@ class Line:
         destW = max(1, min(self.sprite.get_width() * self.W / 266, WINDOW_WIDTH))
         destH = max(1, min(self.sprite.get_height() * self.W / 266, WINDOW_HEIGHT))
 
-        if not isinstance(destW, (int, float)) or not isinstance(destH, (int, float)):
-            print(f"Erro: destW ou destH não são numéricos: destW={destW}, destH={destH}")
-            return
-
         destX -= destW / 2
         destY -= destH / 1.5
 
@@ -60,8 +56,8 @@ class Line:
             try:
                 scaled_sprite = pygame.transform.scale(self.sprite, (int(destW), int(destH)))
                 draw_surface.blit(scaled_sprite, (int(destX), int(destY)))
-
-                # Desenhar a hitbox do carro (cor azul)
+                
+                # Desenhar a hitbox do carro
                 hitbox_rect = pygame.Rect(int(destX), int(destY), int(destW), int(destH))
                 pygame.draw.rect(draw_surface, (0, 0, 255), hitbox_rect, 2)
             except pygame.error as e:
@@ -98,6 +94,9 @@ class GameWindow:
         self.time_elapsed = 0
         self.bounce_amplitude = 10
         self.bounce_frequency = 4
+        self.lives = 3  # Adiciona vidas iniciais
+        self.score = 0  # Inicializa o score
+        self.font = pygame.font.Font(None, 36)  # Fonte para exibir vidas e score
 
     def draw_motoqueiro(self):
         bounce_offset = math.sin(self.time_elapsed * self.bounce_frequency) * self.bounce_amplitude
@@ -105,11 +104,18 @@ class GameWindow:
         motoqueiro_rect = rotated_img.get_rect()
         motoqueiro_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT - 150 + bounce_offset)
         
-        # Desenhar o motoqueiro na tela
         self.window_surface.blit(rotated_img, motoqueiro_rect)
         
-        # Desenhar a hitbox do motoqueiro (cor vermelha)
         pygame.draw.rect(self.window_surface, (255, 0, 0), motoqueiro_rect, 2)
+
+        return motoqueiro_rect
+
+    def display_lives_and_score(self):
+        lives_text = self.font.render(f"Vidas: {self.lives}", True, (255, 255, 255))
+        self.window_surface.blit(lives_text, (10, 10))
+
+        score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
+        self.window_surface.blit(score_text, (10, 50))
 
     def run(self):
         lines: List[Line] = []
@@ -117,7 +123,6 @@ class GameWindow:
             line = Line()
             line.z = i * segL + 0.00001
 
-            # Randomizar a aparição do carro
             if random.randint(1, 200) == 1:
                 line.sprite = self.sprite_5
                 line.spriteX = random.choice([-3000, 0, 3000])
@@ -177,12 +182,38 @@ class GameWindow:
                 drawQuad(self.window_surface, road_color, prev.X, prev.Y, prev.W, current.X, current.Y, current.W)
 
             self.time_elapsed += self.dt
-            self.draw_motoqueiro()
+            motoqueiro_rect = self.draw_motoqueiro()
+            self.display_lives_and_score()  # Exibe as vidas e o score restantes na tela
 
             for n in range(startPos + 300, startPos, -1):
-                lines[n % N].drawSprite(self.window_surface)
+                line = lines[n % N]
+                if line.sprite:
+                    destX = line.X + line.scale * line.spriteX * WINDOW_WIDTH / 2
+                    destY = line.Y
+                    destW = max(1, min(line.sprite.get_width() * line.W / 266, WINDOW_WIDTH))
+                    destH = max(1, min(line.sprite.get_height() * line.W / 266, WINDOW_HEIGHT))
 
-            pygame.display.flip()
+                    # Verificar se destW e destH são maiores que 0 antes de criar o Rect
+                    if destW > 0 and destH > 0:
+                        car_rect = pygame.Rect(int(destX - destW / 2), int(destY - destH / 1.5), int(destW), int(destH))
+
+                        if motoqueiro_rect.colliderect(car_rect) and not line.hit:
+                            print("Colisão detectada!")
+                            line.hit = True  # Marca o carro como já tendo causado colisão
+                            self.lives -= 1
+                            if self.lives <= 0:
+                                print("Game Over!")
+                                pygame.quit()
+                                sys.exit()
+
+                        # Verifica se o jogador ultrapassou o carro
+                        if line.Y > motoqueiro_rect.top and not line.hit:
+                            self.score += 10  # Incrementa o score a cada carro ultrapassado
+
+                    # Desenha o sprite do carro
+                    line.drawSprite(self.window_surface)
+
+            pygame.display.update()
             self.clock.tick(60)
 
 if __name__ == "__main__":
